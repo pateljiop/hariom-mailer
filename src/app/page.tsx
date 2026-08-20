@@ -1,17 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
-const template = `Hi {{business}},
+const DEFAULT_OBSERVATION = 'I noticed an opportunity to make the website clearer and easier for visitors to take the next step.';
 
-I came across your business while looking at {{industry}} companies in {{location}}.
+function buildMessage(business: string, industry: string, location: string, observation: string) {
+  const safeBusiness = business.trim() || 'your business';
+  const safeIndustry = industry.trim() || 'local service';
+  const safeLocation = location.trim() || 'your area';
+  const safeObservation = observation.trim() || DEFAULT_OBSERVATION;
+
+  return `Hi ${safeBusiness},
+
+I came across your business while looking at ${safeIndustry} companies in ${safeLocation}.
 
 I’m Hariom, a web developer behind Hariom Builds. I build modern, mobile-friendly websites for service businesses, focused on making services clearer and enquiries easier.
 
 I’ve recently built several business website concepts, including roofing and property-maintenance projects:
 https://hariom-portfolio.pages.dev/
 
-I noticed {{observation}}
+I noticed ${safeObservation}
 
 If improving your website is something you’re considering, I’d be happy to send over 2–3 specific ideas for your site.
 
@@ -21,21 +29,43 @@ Best,
 Hariom
 Hariom Builds
 Web Developer`;
+}
 
 export default function HomePage() {
   const [to, setTo] = useState('');
+  const [business, setBusiness] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [location, setLocation] = useState('');
+  const [observation, setObservation] = useState('');
   const [subject, setSubject] = useState('Quick website idea for your business');
-  const [text, setText] = useState(template);
+  const [manualMessage, setManualMessage] = useState('');
   const [status, setStatus] = useState('');
 
+  const generatedMessage = useMemo(
+    () => buildMessage(business, industry, location, observation),
+    [business, industry, location, observation],
+  );
+
+  const text = manualMessage || generatedMessage;
+
+  function useGeneratedMessage() {
+    setManualMessage('');
+    setStatus('✓ Personalized message refreshed.');
+  }
+
   async function send() {
-    if (!to) return setStatus('⚠ Add a recipient email first.');
+    if (!to.trim()) return setStatus('⚠ Add a recipient email first.');
+    if (!business.trim()) return setStatus('⚠ Add the business name first.');
+    if (text.includes('{{') || text.includes('}}')) {
+      return setStatus('⚠ Remove unresolved {{placeholders}} before sending.');
+    }
+
     setStatus('Sending…');
     try {
       const response = await fetch('/api/mailer/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, subject, text }),
+        body: JSON.stringify({ to: to.trim(), subject: subject.trim(), text }),
       });
       const data = await response.json();
       setStatus(response.ok ? '✓ Sent successfully' : `⚠ ${data.error || 'Send failed'}`);
@@ -60,20 +90,41 @@ export default function HomePage() {
 
         <section className="hero">
           <h1>Your outreach.<br /><span>Your Gmail. Your control.</span></h1>
-          <p>Review, personalize and send high-quality business outreach directly from your own Gmail account. Built for focused, relevant lead generation — not bulk spam.</p>
+          <p>Research the lead, personalize the message, review it, then send directly from your own Gmail. Built for focused, relevant outreach — not bulk spam.</p>
         </section>
 
         <div className="grid">
           <aside className="card">
-            <h2>Lead checklist</h2>
-            <p className="muted">A better message starts with better research.</p>
+            <h2>Lead details</h2>
+            <p className="muted">Fill these in once and the message is personalized automatically.</p>
+
+            <div className="mini-fields">
+              <div className="field">
+                <label htmlFor="business">BUSINESS</label>
+                <input id="business" value={business} onChange={e => setBusiness(e.target.value)} placeholder="Acme Roofing" />
+              </div>
+              <div className="field">
+                <label htmlFor="industry">INDUSTRY</label>
+                <input id="industry" value={industry} onChange={e => setIndustry(e.target.value)} placeholder="roofing" />
+              </div>
+              <div className="field">
+                <label htmlFor="location">LOCATION</label>
+                <input id="location" value={location} onChange={e => setLocation(e.target.value)} placeholder="Manchester, UK" />
+              </div>
+              <div className="field">
+                <label htmlFor="observation">WEBSITE OBSERVATION</label>
+                <textarea id="observation" className="observation" value={observation} onChange={e => setObservation(e.target.value)} placeholder={DEFAULT_OBSERVATION} />
+              </div>
+            </div>
+
             <ul className="checklist">
               <li><span className="check">✓</span><span>Use a verified public business email.</span></li>
-              <li><span className="check">✓</span><span>Personalize the business, location and observation.</span></li>
-              <li><span className="check">✓</span><span>Review the message before sending.</span></li>
+              <li><span className="check">✓</span><span>Mention one genuine website observation.</span></li>
+              <li><span className="check">✓</span><span>Review the final message before sending.</span></li>
               <li><span className="check">✓</span><span>Keep outreach relevant and low-volume.</span></li>
             </ul>
-            <div className="tip"><strong>Pro tip:</strong> One specific observation about their website is much stronger than a generic pitch.</div>
+
+            <div className="tip"><strong>Pro tip:</strong> A specific observation is stronger than a generic pitch.</div>
           </aside>
 
           <section className="card">
@@ -87,8 +138,12 @@ export default function HomePage() {
                 <input id="subject" value={subject} onChange={e => setSubject(e.target.value)} />
               </div>
               <div className="field full">
-                <label htmlFor="message">MESSAGE</label>
-                <textarea id="message" value={text} onChange={e => setText(e.target.value)} />
+                <div className="message-heading">
+                  <label htmlFor="message">MESSAGE</label>
+                  <button type="button" className="refresh" onClick={useGeneratedMessage}>Use generated message</button>
+                </div>
+                <textarea id="message" value={text} onChange={e => setManualMessage(e.target.value)} />
+                {text.includes('{{') || text.includes('}}') ? <p className="warning">Unresolved placeholder detected. Review before sending.</p> : null}
               </div>
             </div>
             <div className="actions">
