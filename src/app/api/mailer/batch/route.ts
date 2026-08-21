@@ -6,6 +6,12 @@ function encodeBase64Url(value: string) {
 }
 
 type Lead = { to?: string; subject?: string; text?: string };
+type SendResult = { to: string; ok: boolean; id?: string; error?: string };
+
+function getErrorMessage(error: unknown) {
+  const err = error as { response?: { data?: { error?: { message?: string } } }; message?: string } | null;
+  return err?.response?.data?.error?.message || err?.message || 'Gmail rejected this message.';
+}
 
 export async function POST(request: NextRequest) {
   const refreshToken = request.cookies.get('gmail_refresh_token')?.value;
@@ -35,7 +41,7 @@ export async function POST(request: NextRequest) {
     const auth = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     auth.setCredentials({ refresh_token: refreshToken });
     const gmail = google.gmail({ version: 'v1', auth });
-    const results: { to: string; ok: boolean; id?: string }[] = [];
+    const results: SendResult[] = [];
 
     for (const lead of leads) {
       const to = lead.to!.trim();
@@ -45,14 +51,23 @@ export async function POST(request: NextRequest) {
         const raw = [`To: ${to}`, `Subject: ${subject}`, 'Content-Type: text/plain; charset="UTF-8"', '', text].join('\r\n');
         const response = await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encodeBase64Url(raw) } });
         results.push({ to, ok: true, id: response.data.id || undefined });
-      } catch {
-        results.push({ to, ok: false });
+      } catch (error) {
+        const message = getErrorMessage(error);
+        console.error('Gmail batch send failed', { to, message });
+        results.push({ to, ok: false, error: message });
       }
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
-    return NextResponse.json({ ok: true, sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results });
-  } catch {
-    return NextResponse.json({ error: 'Gmail rejected the batch. Reconnect Gmail and try again.' }, { status: 502 });
+    return NextResponse.json({
+      ok: results.some(r => r.ok),
+      sent: results.filter(r => r.ok).length,
+      failed: results.filter(r => !r.ok).length,
+      results,
+    });
+  } catch (error) {
+    const message = getErrorMessage(error);
+    console.error('Gmail batch setup failed', message);
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
