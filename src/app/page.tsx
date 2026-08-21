@@ -6,6 +6,8 @@ const DEFAULT_OBSERVATION = 'I noticed an opportunity to make the website cleare
 
 type Lead = { to: string; business: string; industry: string; location: string; observation: string };
 
+type BatchResult = { to: string; ok: boolean; error?: string };
+
 function buildMessage(business: string, industry: string, location: string, observation: string) {
   const safeBusiness = business.trim() || 'your business';
   const safeIndustry = industry.trim() || 'local service';
@@ -25,6 +27,7 @@ export default function HomePage() {
   const [batchInput, setBatchInput] = useState('');
   const [confirmBatch, setConfirmBatch] = useState(false);
   const [status, setStatus] = useState('');
+  const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
 
   const generatedMessage = useMemo(() => buildMessage(business, industry, location, observation), [business, industry, location, observation]);
   const text = manualMessage || generatedMessage;
@@ -56,12 +59,14 @@ export default function HomePage() {
     if (!leads.length) return setStatus('⚠ Add at least one lead.');
     if (leads.length > 10) return setStatus('⚠ Maximum 10 leads per batch.');
     if (leads.some(l => !l.to || !l.business)) return setStatus('⚠ Each line needs email and business name.');
+    setBatchResults([]);
     setStatus(`Sending ${leads.length} reviewed emails…`);
     try {
       const payload = leads.map(l => ({ to: l.to, subject: subject.trim().replace('your business', l.business), text: buildMessage(l.business, l.industry, l.location, l.observation) }));
       const response = await fetch('/api/mailer/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leads: payload, confirm: true }) });
       const data = await response.json();
-      setStatus(response.ok ? `✓ Batch complete: ${data.sent} sent, ${data.failed} failed.` : `⚠ ${data.error || 'Batch failed'}`);
+      if (Array.isArray(data.results)) setBatchResults(data.results);
+      setStatus(response.ok ? `✓ Batch complete: ${data.sent ?? 0} sent, ${data.failed ?? 0} failed.` : `⚠ ${data.error || 'Batch failed'}`);
     } catch { setStatus('⚠ Unable to reach the batch mail service.'); }
   }
 
@@ -87,7 +92,7 @@ export default function HomePage() {
         </div>
         <div className="actions"><button onClick={send} className="send">Send email →</button><span className="status">{status}</span></div>
 
-        <div className="batch-box"><h2>Reviewed batch</h2><p className="muted">Paste up to 10 leads, one per line: <code>email | business | industry | location | observation</code></p><textarea value={batchInput} onChange={e => setBatchInput(e.target.value)} placeholder={'owner@example.com | Acme Roofing | roofing | Texas | I noticed the service pages are difficult to navigate.\nhello@example.com | Example Plumbing | plumbing | Florida | The mobile CTA could be more prominent.'} /><label className="confirm"><input type="checkbox" checked={confirmBatch} onChange={e => setConfirmBatch(e.target.checked)} /> I reviewed these leads and the outreach is relevant to each business.</label><button onClick={sendBatch} className="send batch-send">Send reviewed batch →</button></div>
+        <div className="batch-box"><h2>Reviewed batch</h2><p className="muted">Paste up to 10 leads, one per line: <code>email | business | industry | location | observation</code></p><textarea value={batchInput} onChange={e => setBatchInput(e.target.value)} placeholder={'owner@example.com | Acme Roofing | roofing | Texas | I noticed the service pages are difficult to navigate.\nhello@example.com | Example Plumbing | plumbing | Florida | The mobile CTA could be more prominent.'} /><label className="confirm"><input type="checkbox" checked={confirmBatch} onChange={e => setConfirmBatch(e.target.checked)} /> I reviewed these leads and the outreach is relevant to each business.</label><button onClick={sendBatch} className="send batch-send">Send reviewed batch →</button>{batchResults.length > 0 ? <div className="batch-results"><h3>Delivery results</h3>{batchResults.map((result, index) => <div className="batch-result" key={`${result.to}-${index}`}><span>{result.ok ? '✓' : '✕'} {result.to}</span>{result.error ? <span className="batch-error">{result.error}</span> : <span>Accepted by Gmail</span>}</div>)}</div> : null}</div>
       </section></div>
       <footer className="footer">Hariom Builds · Private Gmail Mailer · Low-volume reviewed outreach</footer>
     </div></main>
